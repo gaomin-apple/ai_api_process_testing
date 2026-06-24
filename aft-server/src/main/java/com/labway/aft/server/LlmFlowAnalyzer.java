@@ -109,7 +109,7 @@ public class LlmFlowAnalyzer {
         return value;
     }
 
-    private String callModel(LlmConfig config, String prompt) {
+    protected String callModel(LlmConfig config, String prompt) {
         Map<String, Object> body = Map.of(
                 "model", config.model(),
                 "temperature", 0.1,
@@ -255,6 +255,8 @@ public class LlmFlowAnalyzer {
 
     private FlowDefinition.RequestConfig requestFor(EndpointDefinition endpoint) {
         Map<String, String> path = new LinkedHashMap<>();
+        Map<String, String> query = new LinkedHashMap<>();
+        Map<String, String> headers = new LinkedHashMap<>();
         Matcher matcher = PATH_PARAMETER_PATTERN.matcher(endpoint.path());
         while (matcher.find()) {
             path.put(matcher.group(1), "${run." + matcher.group(1) + "}");
@@ -262,12 +264,16 @@ public class LlmFlowAnalyzer {
         for (EndpointDefinition.ParameterDefinition parameter : endpoint.parameters()) {
             if ("path".equals(parameter.location())) {
                 path.putIfAbsent(parameter.name(), "${run." + parameter.name() + "}");
+            } else if (parameter.required() && "query".equals(parameter.location())) {
+                query.putIfAbsent(parameter.name(), "${run." + parameter.name() + "}");
+            } else if (parameter.required() && "header".equals(parameter.location())) {
+                headers.putIfAbsent(parameter.name(), "${run." + parameter.name() + "}");
             }
         }
         return new FlowDefinition.RequestConfig(
                 path,
-                Map.of(),
-                Map.of(),
+                query,
+                headers,
                 Map.of(),
                 null,
                 endpoint.requestBodySchema() == null ? "NONE" : "JSON",
@@ -327,7 +333,7 @@ public class LlmFlowAnalyzer {
     public record LlmDefaults(String apiBaseUrl, String model, boolean apiKeyConfigured) {
     }
 
-    private record LlmConfig(String baseUrl, String model, String apiKey) {
+    protected record LlmConfig(String baseUrl, String model, String apiKey) {
     }
 
     private record GeneratedFlow(String name, List<GeneratedStep> steps) {
