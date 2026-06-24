@@ -149,6 +149,31 @@ export type RunResult = {
   error?: string | null
 }
 
+export type LlmDefaults = {
+  apiBaseUrl: string
+  model: string
+  apiKeyConfigured: boolean
+}
+
+export type JavaFlowAnalyzeRequest = {
+  sourcePath: string
+  flowName: string
+  apiBaseUrl?: string
+  apiKey?: string
+  model?: string
+}
+
+export type JavaFlowAnalyzeResponse = {
+  flow: FlowDefinition
+  scan: {
+    root: string
+    javaFileCandidates: number
+    includedFiles: number
+    includedCharacters: number
+  }
+  defaults: LlmDefaults
+}
+
 export type CanvasNodeData = {
   endpoint?: EndpointDefinition
   definition: FlowNodeDefinition

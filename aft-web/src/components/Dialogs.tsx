@@ -1,6 +1,6 @@
-import { FileUp, Link2, Plus, X } from 'lucide-react'
+import { FileSearch, FileUp, Link2, Plus, X } from 'lucide-react'
 import { useState } from 'react'
-import type { EnvironmentDefinition, Project } from '../types'
+import type { EnvironmentDefinition, JavaFlowAnalyzeRequest, LlmDefaults } from '../types'
 
 type ImportProps = {
   open: boolean
@@ -173,6 +173,107 @@ export function EnvironmentDialog({ open, environment, onClose, onSave }: Enviro
         <div className="dialog-actions">
           <button className="secondary-button" onClick={onClose}>取消</button>
           <button className="primary-button" onClick={() => void save()}>保存环境</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type JavaAnalyzeProps = {
+  open: boolean
+  defaults?: LlmDefaults
+  onClose: () => void
+  onAnalyze: (request: JavaFlowAnalyzeRequest) => Promise<void>
+}
+
+export function JavaAnalyzeDialog({ open, defaults, onClose, onAnalyze }: JavaAnalyzeProps) {
+  const [sourcePath, setSourcePath] = useState('')
+  const [flowName, setFlowName] = useState('AI Generated Flow')
+  const [apiBaseUrl, setApiBaseUrl] = useState(defaults?.apiBaseUrl ?? 'https://api.deepseek.com')
+  const [model, setModel] = useState(defaults?.model ?? 'deepseek-chat')
+  const [apiKey, setApiKey] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  if (!open) return null
+
+  const submit = async () => {
+    if (!sourcePath.trim()) {
+      setError('请输入 Java 项目目录')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      await onAnalyze({
+        sourcePath: sourcePath.trim(),
+        flowName: flowName.trim() || 'AI Generated Flow',
+        apiBaseUrl: apiBaseUrl.trim() || undefined,
+        model: model.trim() || undefined,
+        apiKey: apiKey.trim() || undefined,
+      })
+      onClose()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'AI 分析失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="dialog-backdrop">
+      <div className="dialog wide">
+        <div className="dialog-title">
+          <div>
+            <strong>扫描 Java 项目生成流程</strong>
+            <span>扫描本地 Java 源码，通过 OpenAI 兼容接口分析调用关系，默认 DeepSeek</span>
+          </div>
+          <button className="icon-button" onClick={onClose}><X size={18} /></button>
+        </div>
+        <label className="field">
+          <span>Java 项目目录</span>
+          <div className="input-action">
+            <FileSearch size={16} />
+            <input
+              value={sourcePath}
+              onChange={(event) => setSourcePath(event.target.value)}
+              placeholder="D:\\workspace\\order-service"
+              autoFocus
+            />
+          </div>
+          <small className="field-help">填写后端可访问的本地目录；会扫描 .java 文件并限制发送给模型的上下文大小。</small>
+        </label>
+        <label className="field">
+          <span>生成流程名称</span>
+          <input value={flowName} onChange={(event) => setFlowName(event.target.value)} />
+        </label>
+        <div className="field-grid">
+          <label className="field">
+            <span>OpenAI 兼容 Base URL</span>
+            <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>模型</span>
+            <input value={model} onChange={(event) => setModel(event.target.value)} />
+          </label>
+        </div>
+        <label className="field">
+          <span>API Key</span>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder={defaults?.apiKeyConfigured ? '已配置环境变量 AFT_LLM_API_KEY，可留空' : 'sk-...'}
+          />
+          <small className="field-help">
+            可留空使用服务端环境变量 AFT_LLM_API_KEY；Base URL 和模型也可用 AFT_LLM_BASE_URL、AFT_LLM_MODEL 配置。
+          </small>
+        </label>
+        {error ? <div className="form-error">{error}</div> : null}
+        <div className="dialog-actions">
+          <button className="secondary-button" onClick={onClose}>取消</button>
+          <button className="primary-button" disabled={loading} onClick={() => void submit()}>
+            {loading ? '分析中...' : '生成流程'}
+          </button>
         </div>
       </div>
     </div>

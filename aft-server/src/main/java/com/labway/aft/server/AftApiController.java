@@ -36,17 +36,33 @@ public class AftApiController {
     private final OpenApiImporter importer;
     private final FlowEngine engine;
     private final FlowValidator validator;
+    private final JavaProjectScanner javaProjectScanner;
+    private final LlmFlowAnalyzer llmFlowAnalyzer;
 
-    public AftApiController(AftStore store, OpenApiImporter importer, FlowEngine engine, FlowValidator validator) {
+    public AftApiController(
+            AftStore store,
+            OpenApiImporter importer,
+            FlowEngine engine,
+            FlowValidator validator,
+            JavaProjectScanner javaProjectScanner,
+            LlmFlowAnalyzer llmFlowAnalyzer
+    ) {
         this.store = store;
         this.importer = importer;
         this.engine = engine;
         this.validator = validator;
+        this.javaProjectScanner = javaProjectScanner;
+        this.llmFlowAnalyzer = llmFlowAnalyzer;
     }
 
     @GetMapping("/health")
     public Map<String, Object> health() {
         return Map.of("status", "UP", "time", Instant.now());
+    }
+
+    @GetMapping("/llm/config")
+    public LlmFlowAnalyzer.LlmDefaults llmConfig() {
+        return llmFlowAnalyzer.defaults();
     }
 
     @GetMapping("/projects")
@@ -191,6 +207,33 @@ public class AftApiController {
     @GetMapping("/projects/{projectId}/flows")
     public List<FlowDefinition> flows(@PathVariable String projectId) {
         return store.flows(projectId);
+    }
+
+    @PostMapping("/projects/{projectId}/java/analyze-flow")
+    public LlmFlowAnalyzer.JavaFlowAnalyzeResponse analyzeJavaProject(
+            @PathVariable String projectId,
+            @RequestBody LlmFlowAnalyzer.JavaFlowAnalyzeRequest request
+    ) {
+        requireProject(projectId);
+        JavaProjectScanner.ScanResult scan = javaProjectScanner.scan(request.sourcePath());
+        List<EndpointDefinition> endpoints = store.activeEndpoints(projectId);
+        if (endpoints.isEmpty() && !scan.discoveredEndpoints().isEmpty()) {
+            store.replaceEndpoints(projectId, javaProjectScanner.endpointDefinitions(projectId, scan));
+            store.updateProjectSource(projectId, "java:" + scan.root());
+            endpoints = store.activeEndpoints(projectId);
+        }
+        FlowDefinition flow = llmFlowAnalyzer.analyze(
+                projectId,
+                scan,
+                endpoints,
+                request
+        );
+        List<String> errors = validator.validateForSave(flow, store.endpointMap(projectId));
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException(String.join("; ", errors));
+        }
+        FlowDefinition saved = store.saveFlow(flow);
+        return new LlmFlowAnalyzer.JavaFlowAnalyzeResponse(saved, scan, llmFlowAnalyzer.defaults());
     }
 
     @PostMapping("/flows")

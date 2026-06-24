@@ -3,6 +3,9 @@ import type {
   EnvironmentDefinition,
   FlowDefinition,
   Folder,
+  JavaFlowAnalyzeRequest,
+  JavaFlowAnalyzeResponse,
+  LlmDefaults,
   Project,
   RunResult,
 } from './types'
@@ -55,6 +58,9 @@ export const api = {
   flows: (projectId: string) =>
     request<FlowDefinition[]>(`/api/projects/${projectId}/flows`),
   saveFlow: (flow: FlowDefinition) => request<FlowDefinition>('/api/flows', json(flow)),
+  llmConfig: () => request<LlmDefaults>('/api/llm/config'),
+  analyzeJavaFlow: (projectId: string, body: JavaFlowAnalyzeRequest) =>
+    request<JavaFlowAnalyzeResponse>(`/api/projects/${projectId}/java/analyze-flow`, json(body)),
   importUrl: (projectId: string, url: string) =>
     request<{ imported: number; warnings: string[] }>(
       `/api/projects/${projectId}/openapi/url`,

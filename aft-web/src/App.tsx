@@ -8,10 +8,10 @@ import {
   type Node,
   type NodeChange,
 } from '@xyflow/react'
-import { ChevronDown, Database, Download, Play, Plus, Save, Settings2, Upload, UploadCloud } from 'lucide-react'
+import { BrainCircuit, ChevronDown, Database, Download, Play, Plus, Save, Settings2, Upload, UploadCloud } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import { EnvironmentDialog, ImportDialog, ProjectDialog } from './components/Dialogs'
+import { EnvironmentDialog, ImportDialog, JavaAnalyzeDialog, ProjectDialog } from './components/Dialogs'
 import { EndpointCatalog } from './components/EndpointCatalog'
 import { FlowCanvas } from './components/FlowCanvas'
 import { NodeInspector } from './components/NodeInspector'
@@ -26,6 +26,8 @@ import type {
   FlowDefinition,
   FlowNodeDefinition,
   Folder,
+  JavaFlowAnalyzeRequest,
+  LlmDefaults,
   Project,
   RunResult,
 } from './types'
@@ -164,8 +166,10 @@ function App() {
   const [runResult, setRunResult] = useState<RunResult>()
   const [running, setRunning] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [javaAnalyzeOpen, setJavaAnalyzeOpen] = useState(false)
   const [environmentOpen, setEnvironmentOpen] = useState(false)
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const [llmDefaults, setLlmDefaults] = useState<LlmDefaults>()
   const [notice, setNotice] = useState('')
   const [initializing, setInitializing] = useState(true)
 
@@ -312,6 +316,12 @@ function App() {
       .catch((error: Error) => setNotice(error.message))
       .finally(() => setInitializing(false))
   }, [loadProject])
+
+  useEffect(() => {
+    void api.llmConfig()
+      .then(setLlmDefaults)
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (!runResult) return
@@ -534,6 +544,14 @@ function App() {
     input.click()
   }
 
+  const analyzeJavaFlow = async (request: JavaFlowAnalyzeRequest) => {
+    if (!projectId) return
+    const result = await api.analyzeJavaFlow(projectId, request)
+    await loadProject(projectId)
+    setFlowId(result.flow.id)
+    setNotice(`AI 流程已生成：扫描 ${result.scan.includedFiles} 个 Java 文件`)
+  }
+
   if (initializing) {
     return <div className="boot-screen"><div className="brand-mark">A</div><strong>正在启动 AFT Studio…</strong></div>
   }
@@ -604,6 +622,9 @@ function App() {
           </button>
           <button className="secondary-button" onClick={() => setImportOpen(true)}>
             <UploadCloud size={16} /> 导入 OpenAPI
+          </button>
+          <button className="secondary-button" onClick={() => setJavaAnalyzeOpen(true)}>
+            <BrainCircuit size={16} /> AI 生成流程
           </button>
           <button className="secondary-button" onClick={() => void saveFlow()}>
             <Save size={16} /> 保存
@@ -686,6 +707,12 @@ function App() {
         onClose={() => setImportOpen(false)}
         onUrl={async (url) => { await api.importUrl(projectId, url); await refreshEndpoints() }}
         onFile={async (file) => { await api.importFile(projectId, file); await refreshEndpoints() }}
+      />
+      <JavaAnalyzeDialog
+        open={javaAnalyzeOpen}
+        defaults={llmDefaults}
+        onClose={() => setJavaAnalyzeOpen(false)}
+        onAnalyze={analyzeJavaFlow}
       />
       <EnvironmentDialog
         key={currentEnvironment?.id + String(environmentOpen)}
