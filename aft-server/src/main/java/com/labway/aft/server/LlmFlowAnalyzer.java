@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
 
 @Component
 public class LlmFlowAnalyzer {
-    private static final String DEFAULT_BASE_URL = "https://api.deepseek.com";
+    private static final String DEFAULT_BASE_URL = "https://api.deepseek.com/v1";
     private static final String DEFAULT_MODEL = "deepseek-chat";
     private static final Pattern PATH_PARAMETER_PATTERN = Pattern.compile("\\{([^}/]+)}");
 
@@ -54,7 +54,7 @@ public class LlmFlowAnalyzer {
             JavaFlowAnalyzeRequest request
     ) {
         if (endpoints == null || endpoints.isEmpty()) {
-            throw new IllegalArgumentException("Import OpenAPI endpoints before generating a flow");
+            throw new IllegalArgumentException("No endpoints are available. Import OpenAPI first or scan a Java project with Spring MVC mappings.");
         }
         LlmConfig config = resolveConfig(request);
         String llmJson = callModel(config, buildPrompt(scan, endpoints));

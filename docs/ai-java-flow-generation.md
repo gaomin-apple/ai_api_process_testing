@@ -7,14 +7,14 @@ canvas.
 
 Default provider:
 
-- Base URL: `https://api.deepseek.com`
+- Base URL: `https://api.deepseek.com/v1`
 - Model: `deepseek-chat`
 
 Server environment variables:
 
 ```powershell
 $env:AFT_LLM_API_KEY = "sk-..."
-$env:AFT_LLM_BASE_URL = "https://api.deepseek.com"
+$env:AFT_LLM_BASE_URL = "https://api.deepseek.com/v1"
 $env:AFT_LLM_MODEL = "deepseek-chat"
 ```
 

@@ -189,7 +189,7 @@ type JavaAnalyzeProps = {
 export function JavaAnalyzeDialog({ open, defaults, onClose, onAnalyze }: JavaAnalyzeProps) {
   const [sourcePath, setSourcePath] = useState('')
   const [flowName, setFlowName] = useState('AI Generated Flow')
-  const [apiBaseUrl, setApiBaseUrl] = useState(defaults?.apiBaseUrl ?? 'https://api.deepseek.com')
+  const [apiBaseUrl, setApiBaseUrl] = useState(defaults?.apiBaseUrl ?? 'https://api.deepseek.com/v1')
   const [model, setModel] = useState(defaults?.model ?? 'deepseek-chat')
   const [apiKey, setApiKey] = useState('')
   const [loading, setLoading] = useState(false)
