@@ -76,11 +76,12 @@ public class LlmFlowAnalyzer {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("task", """
                 Analyze the Java project source and infer API business call relationships.
-                Return one likely executable API flow using only endpointId values from the provided OpenAPI endpoint list.
+                Return one likely executable API relationship graph using only endpointId values from the provided endpoint list.
                 Prefer controller/service call order, method names, path semantics, and request/response DTO names.
                 Output strict JSON only. Do not include markdown.
                 JSON schema:
-                {"name":"short flow name","steps":[{"endpointId":"id","label":"short step label","reason":"why this step is ordered here"}]}
+                {"name":"short flow name","nodes":[{"id":"n1","endpointId":"id","label":"short label","reason":"why this endpoint is included"}],"edges":[{"source":"n1","target":"n2","reason":"why source precedes target"}]}
+                Use edges to represent inferred API call relationships. If the relationship is purely linear, still return explicit edges.
                 """);
         payload.put("endpoints", endpoints.stream().map(this::endpointPayload).toList());
         payload.put("scan", scan);
@@ -168,28 +169,72 @@ public class LlmFlowAnalyzer {
         try {
             JsonNode root = objectMapper.readTree(json);
             String name = root.path("name").asText("AI Generated Flow");
+            List<GeneratedNode> nodes = generatedNodes(root);
+            List<GeneratedEdge> edges = generatedEdges(root, nodes);
+            return new GeneratedFlow(name, nodes, edges);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("Unable to parse LLM JSON: " + exception.getOriginalMessage(), exception);
+        }
+    }
+
+    private List<GeneratedNode> generatedNodes(JsonNode root) {
+        List<GeneratedNode> nodes = new ArrayList<>();
+        JsonNode nodesNode = root.path("nodes");
+        if (nodesNode.isArray()) {
+            for (JsonNode node : nodesNode) {
+                String id = node.path("id").asText(null);
+                String endpointId = node.path("endpointId").asText(null);
+                if (endpointId != null && !endpointId.isBlank()) {
+                    nodes.add(new GeneratedNode(
+                            firstNonBlank(id, "node-" + (nodes.size() + 1)),
+                            endpointId,
+                            node.path("label").asText(null),
+                            node.path("reason").asText(null)
+                    ));
+                }
+            }
+        }
+        if (nodes.isEmpty()) {
             JsonNode stepsNode = root.path("steps");
             if (!stepsNode.isArray()) {
-                throw new IllegalArgumentException("LLM JSON must include a steps array");
+                throw new IllegalArgumentException("LLM JSON must include a nodes array or a steps array");
             }
-            List<GeneratedStep> steps = new ArrayList<>();
             for (JsonNode step : stepsNode) {
                 String endpointId = step.path("endpointId").asText(null);
                 if (endpointId != null && !endpointId.isBlank()) {
-                    steps.add(new GeneratedStep(
+                    nodes.add(new GeneratedNode(
+                            "node-" + (nodes.size() + 1),
                             endpointId,
                             step.path("label").asText(null),
                             step.path("reason").asText(null)
                     ));
                 }
             }
-            if (steps.isEmpty()) {
-                throw new IllegalArgumentException("LLM JSON did not select any endpointId values");
-            }
-            return new GeneratedFlow(name, steps);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalArgumentException("Unable to parse LLM JSON: " + exception.getOriginalMessage(), exception);
         }
+        if (nodes.isEmpty()) {
+            throw new IllegalArgumentException("LLM JSON did not select any endpointId values");
+        }
+        return nodes;
+    }
+
+    private List<GeneratedEdge> generatedEdges(JsonNode root, List<GeneratedNode> nodes) {
+        List<GeneratedEdge> edges = new ArrayList<>();
+        JsonNode edgesNode = root.path("edges");
+        if (edgesNode.isArray()) {
+            for (JsonNode edge : edgesNode) {
+                String source = edge.path("source").asText(null);
+                String target = edge.path("target").asText(null);
+                if (source != null && !source.isBlank() && target != null && !target.isBlank()) {
+                    edges.add(new GeneratedEdge(source, target, edge.path("reason").asText(null)));
+                }
+            }
+        }
+        if (edges.isEmpty() && nodes.size() > 1) {
+            for (int index = 0; index < nodes.size() - 1; index++) {
+                edges.add(new GeneratedEdge(nodes.get(index).id(), nodes.get(index + 1).id(), "linear fallback"));
+            }
+        }
+        return edges;
     }
 
     private FlowDefinition toFlow(
@@ -204,40 +249,55 @@ public class LlmFlowAnalyzer {
         }
 
         List<FlowDefinition.FlowNode> nodes = new ArrayList<>();
-        List<FlowDefinition.FlowEdge> edges = new ArrayList<>();
+        Map<String, String> generatedIdToNodeId = new LinkedHashMap<>();
         int index = 0;
-        String previousNodeId = null;
-        for (GeneratedStep step : generated.steps()) {
-            EndpointDefinition endpoint = byId.get(step.endpointId());
+        for (GeneratedNode generatedNode : generated.nodes()) {
+            EndpointDefinition endpoint = byId.get(generatedNode.endpointId());
             if (endpoint == null || !endpoint.active()) {
                 continue;
             }
             String nodeId = "ai-node-" + UUID.randomUUID();
+            generatedIdToNodeId.put(generatedNode.id(), nodeId);
             nodes.add(new FlowDefinition.FlowNode(
                     nodeId,
                     endpoint.id(),
-                    firstNonBlank(step.label(), endpoint.summary(), endpoint.operationId(), endpoint.method() + " " + endpoint.path()),
+                    firstNonBlank(generatedNode.label(), endpoint.summary(), endpoint.operationId(), endpoint.method() + " " + endpoint.path()),
                     120 + index * 300.0,
-                    160,
+                    160 + (index % 2) * 130.0,
                     requestFor(endpoint),
                     List.of(),
                     List.of(),
                     "API",
                     null
             ));
-            if (previousNodeId != null) {
-                edges.add(new FlowDefinition.FlowEdge(
-                        "ai-edge-" + UUID.randomUUID(),
-                        previousNodeId,
-                        nodeId,
-                        null
-                ));
-            }
-            previousNodeId = nodeId;
             index++;
         }
         if (nodes.isEmpty()) {
             throw new IllegalArgumentException("LLM selected endpoints that are not available in this project");
+        }
+
+        List<FlowDefinition.FlowEdge> edges = new ArrayList<>();
+        for (GeneratedEdge generatedEdge : generated.edges()) {
+            String source = generatedIdToNodeId.get(generatedEdge.source());
+            String target = generatedIdToNodeId.get(generatedEdge.target());
+            if (source != null && target != null && !source.equals(target)) {
+                edges.add(new FlowDefinition.FlowEdge(
+                        "ai-edge-" + UUID.randomUUID(),
+                        source,
+                        target,
+                        null
+                ));
+            }
+        }
+        if (edges.isEmpty() && nodes.size() > 1) {
+            for (int edgeIndex = 0; edgeIndex < nodes.size() - 1; edgeIndex++) {
+                edges.add(new FlowDefinition.FlowEdge(
+                        "ai-edge-" + UUID.randomUUID(),
+                        nodes.get(edgeIndex).id(),
+                        nodes.get(edgeIndex + 1).id(),
+                        null
+                ));
+            }
         }
         Instant now = Instant.now();
         return new FlowDefinition(
@@ -336,9 +396,12 @@ public class LlmFlowAnalyzer {
     protected record LlmConfig(String baseUrl, String model, String apiKey) {
     }
 
-    private record GeneratedFlow(String name, List<GeneratedStep> steps) {
+    private record GeneratedFlow(String name, List<GeneratedNode> nodes, List<GeneratedEdge> edges) {
     }
 
-    private record GeneratedStep(String endpointId, String label, String reason) {
+    private record GeneratedNode(String id, String endpointId, String label, String reason) {
+    }
+
+    private record GeneratedEdge(String source, String target, String reason) {
     }
 }

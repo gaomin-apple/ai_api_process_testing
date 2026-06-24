@@ -1,9 +1,9 @@
 # AI Java Project Flow Generation
 
 AFT Studio can scan a local Java project and ask an OpenAI-compatible chat
-completion model to infer API call relationships. The generated result is saved
-as a normal AFT flow and can be edited, saved, and executed in the existing
-canvas.
+completion model to infer API call relationships as flow nodes and directed
+edges. The generated result is saved as a normal AFT flow and can be edited,
+saved, and executed in the existing canvas.
 
 Default provider:
 

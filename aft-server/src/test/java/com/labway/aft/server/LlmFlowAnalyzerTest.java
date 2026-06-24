@@ -59,6 +59,37 @@ class LlmFlowAnalyzerTest {
         assertEquals(Map.of("X-Trace-Id", "${run.X-Trace-Id}"), request.headers());
     }
 
+    @Test
+    void generatedFlowUsesExplicitRelationshipEdges() {
+        EndpointDefinition login = endpoint("ep_login", "POST", "/login", "Login");
+        EndpointDefinition create = endpoint("ep_create_order", "POST", "/orders", "Create order");
+        EndpointDefinition query = endpoint("ep_query_order", "GET", "/orders/{id}", "Query order");
+        LlmFlowAnalyzer analyzer = new GraphAnalyzer();
+
+        FlowDefinition flow = analyzer.analyze(
+                "project-1",
+                emptyScan(),
+                List.of(login, create, query),
+                new LlmFlowAnalyzer.JavaFlowAnalyzeRequest(
+                        "D:/service",
+                        "Order process",
+                        "https://example.test/v1",
+                        "test-key",
+                        "test-model"
+                )
+        );
+
+        assertEquals(3, flow.nodes().size());
+        assertEquals(2, flow.edges().size());
+        String loginNodeId = nodeId(flow, "ep_login");
+        String createNodeId = nodeId(flow, "ep_create_order");
+        String queryNodeId = nodeId(flow, "ep_query_order");
+        assertEquals(loginNodeId, flow.edges().get(0).source());
+        assertEquals(createNodeId, flow.edges().get(0).target());
+        assertEquals(createNodeId, flow.edges().get(1).source());
+        assertEquals(queryNodeId, flow.edges().get(1).target());
+    }
+
     private static class StubAnalyzer extends LlmFlowAnalyzer {
         StubAnalyzer() {
             super(new ObjectMapper());
@@ -75,5 +106,64 @@ class LlmFlowAnalyzerTest {
                     }
                     """;
         }
+    }
+
+    private static class GraphAnalyzer extends LlmFlowAnalyzer {
+        GraphAnalyzer() {
+            super(new ObjectMapper());
+        }
+
+        @Override
+        protected String callModel(LlmFlowAnalyzer.LlmConfig config, String prompt) {
+            return """
+                    {
+                      "name": "Order process",
+                      "nodes": [
+                        {"id": "login", "endpointId": "ep_login", "label": "Login"},
+                        {"id": "create", "endpointId": "ep_create_order", "label": "Create order"},
+                        {"id": "query", "endpointId": "ep_query_order", "label": "Query order"}
+                      ],
+                      "edges": [
+                        {"source": "login", "target": "create", "reason": "token required"},
+                        {"source": "create", "target": "query", "reason": "query created order"}
+                      ]
+                    }
+                    """;
+        }
+    }
+
+    private static EndpointDefinition endpoint(String id, String method, String path, String summary) {
+        return new EndpointDefinition(
+                id,
+                "project-1",
+                id,
+                method,
+                path,
+                summary,
+                List.of("Test"),
+                List.of(),
+                null,
+                null,
+                true
+        );
+    }
+
+    private static JavaProjectScanner.ScanResult emptyScan() {
+        return new JavaProjectScanner.ScanResult(
+                "D:/service",
+                1,
+                1,
+                120,
+                List.of(),
+                List.of()
+        );
+    }
+
+    private static String nodeId(FlowDefinition flow, String endpointId) {
+        return flow.nodes().stream()
+                .filter(node -> endpointId.equals(node.endpointId()))
+                .findFirst()
+                .orElseThrow()
+                .id();
     }
 }
